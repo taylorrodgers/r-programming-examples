@@ -1,0 +1,195 @@
+---
+title: 'Episode 2: Query Census Data with R'
+author: "Taylor Rodgers"
+date: "12/11/2021"
+output: html_document
+---
+
+```{r packages,echo=FALSE,message=FALSE}
+library(tidyverse)
+```
+
+### Instructions
+
+This document walks you through how to access the Census Bureau's API and find key demographic data.
+
+### Install and Load Necessary Packages
+
+These instructions rely heavily on the `censusapi` package. You will need to load it into your library before proceeding.
+```{r stepone, message=FALSE}
+library(censusapi)
+```
+
+If you have not worked with this package before, you'll need to install it first.
+```{r stepone_next, eval=FALSE}
+install.packages("censusapi")
+library(censusapi)
+```
+
+### Generate an API Key
+
+You’ll need an API key to query data from the Census Bureau. The Census Bureau uses this key to attribute an API call to you or your organization.
+
+To get an API key, visit the following URL:
+
+<https://api.census.gov/data/key_signup.html>
+
+This link will ask you for an organization name and email. I simply put my own name as the organization name and used my email address. You can do the same using your name and email.
+
+You should receive an email afterwards with your API key.
+
+### Assign API Key as Environmental Variable
+
+In order for the following functions to work, you'll need to assign your API key as an environmental variable. Run the script below to assign that key to your environment.
+
+```{r stepthree, include = FALSE}
+Sys.setenv(CENSUS_KEY= "c7dcfc1941c32270c82099818b1d861692080cb7")
+Sys.getenv("CENSUS_KEY")
+```
+
+```{r stepthree_show,eval=FALSE}
+Sys.setenv(CENSUS_KEY= "insert your key here")
+Sys.getenv("CENSUS_KEY")
+```
+
+### View List of Census APIs
+
+The Census has a lot of APIs. It's okay if you don't know which one you'll need yet. We can get started by first seeing which ones are available using the `listCensusApis()` function.
+
+```{r stepfour,eval=FALSE}
+apis <- listCensusApis()
+View(apis)
+```
+
+This should open a large table with all the APIs listed and a brief description. Feel free to browse through them to get an idea on what they all mean.
+
+### Which Census API Has the Data I Need?
+
+As you can tell, there's a lot of options for Census APIs and there's a lot of overlap between these APIs with their data. How do you narrow it down to the one you need?
+
+It depends on the type of data you want.
+
+When it comes to the Census Bureau, most people think about the "Decennial Census" that takes place every ten years. That would be those with the letters "dec" found in the *name* column in the *apis* data set we created.
+
+However, those data sets only include simple demographic data, such as a count of residents in an area broken down by race, sex, and a few other simple descriptors.
+
+The "American Community Survey" is a more in-depth survey conducted by the Census. These are listed with the letters "acs" in the *name* column in the *apis* data set we created.
+
+The American Community Survey (ACS) asks a broader range of questions that reflect the diversity of living standards and demographics of people within the United States. 
+
+A trade-off with the ACS is that they're based on a smaller sample. These surveys take a lot more time to collect from a single household, so the Census Bureau are forced to rely on fewer people to make population inferences.
+
+Don't worry though. The Census Bureau still gets enough of these responses to make a reasonable estimate of how the overall population is doing. While these estimates will never be exact, we can have greater confidence and use them to make more reliable assumptions than most publicly available survey data out there. Plus, this data is free and available to the public. You don't have to pay a market research company to gather this information!
+
+### The Two Types of American Community Survey APIs
+
+The Census Bureau releases *1-year estimates* and *5-year estimates* for the ACS. The 1-year estimates are focused on geographic areas with populations of 65,000 or more. You can get these results on a more timely basis. The 5-year estimates includes data collected over a five year period, but at a micro-level (such as zip code) within the country. That makes it a better API for rural communities.
+
+This [document](https://www.census.gov/content/dam/Census/library/publications/2020/acs/acs_general_handbook_2020_ch03.pdf) from the Census Bureau website does a better job at explaining the difference.
+
+To quote this resource, "Multi-year estimates should be labeled to indicate clearly the full period of time (e.g., 'The child poverty rate in 2014–2018 was X percent.'). They do not describe any specific day, month, or year within that time period."
+
+### Previewing the API Groups
+
+Let's say I want to view 5-year estimates. Chances are, you want to pull data relating to demographic "profiles." (I'll explain why that's what we want in a moment.) So we'll use the "acs/acs5/profile" for the API name. The most recent year on record for this API is 2019.
+
+Now that's the API we want to pull, but we don't know what data is available within it yet. Typically, the variables available are in "groups." So in order to find those variables, we have to determine what groups we want first. That's what the `listCensusMetadata()` function is for.
+
+If you run the script below, it'll pull the variable groupings for the api "acs/acs5/profile" for the year "2019".
+
+```{r stepfive,eval=FALSE}
+census_groups <- listCensusMetadata(
+    name="acs/acs5/profile",
+    vintage="2019",
+    type="groups")
+View(census_groups)
+```
+
+Fortunately, this API only has five groups. If you had used "acs/acs5" for your API name, you would've seen far more options. There's actually not too much difference between the data in these APIs though. It's simply a matter of how verbose you want to see these groupings. In my experience, "acs/acs5/profile" is an easeir way to narrow down to the variables you want.
+
+```{r stepfive_next,echo=FALSE}
+census_groups <- listCensusMetadata(
+    name="acs/acs5/profile",
+    vintage="2019",
+    type="groups")
+census_groups %>% tibble()
+```
+
+### Previewing the API Geography
+
+Let's say I want to find median income for the zip codes in the state of Kansas. Using the list of groups we just pulled, I would suspect the *DP03* group will have the data I want. I need to find out what geographies are available first though. I would use the same `listCensusMetaData()` function, but change the *type* argument to "geography". I would also need to set the *group* argument to "DP03".
+
+```{r stepsix,eval=FALSE}
+census_geo <- listCensusMetadata(
+    name="acs/acs5/profile",
+    vintage="2019",
+    group="DP03",
+    type="geography")
+View(census_geo)
+```
+
+As you can see, we have several geographic levels to choose from. For my research question, I want to pull data at the state and zip code level. Both are available for this API and group.
+
+```{r stepsix_next,echo=FALSE}
+census_geo <- listCensusMetadata(
+    name="acs/acs5/profile",
+    vintage="2019",
+    group="DP03",
+    type="geography")
+census_geo %>% tibble()
+```
+
+### Previewing the API Variables
+
+Now that I have my group and geographic variables determined, I can see what variables are available. I would use the same `listCensusMetaData()` function, but change the *type* argument to "variables".
+
+```{r stepseven,eval=FALSE}
+census_var <- listCensusMetadata(
+    name="acs/acs5/profile",
+    vintage="2019",
+    group="DP03",
+    type="variables")
+View(census_var)
+```
+
+This will generate a list of variables for me to query from. You can filter the *label* column to find "median household income". The variable names we need are DP03_0062E and DP03_0062M, which represents the estimate and margin of error.
+
+```{r stepseven_next,echo=FALSE}
+census_var <- listCensusMetadata(
+    name="acs/acs5/profile",
+    vintage="2019",
+    group="DP03",
+    type="variables")
+census_var %>% filter(name %in% c("DP03_0062E","DP03_0062M")) %>% tibble()
+```
+
+### Querying Our Data
+
+Now we can finally query our data set. We'll use the `getCensus()` function for this part. We'll need to specify the API name, the vintage or year, variable names, and the region we want. (The region code for Kansas is 17. You can find these codes at this [link](https://www.census.gov/data/datasets/1997/econ/gus/gidstate.html))
+
+```{r stepeight,eval=FALSE}
+census <-
+  getCensus(
+    name="acs/acs5/profile",
+    vintage="2019",
+    vars=c("DP03_0062E","DP03_0062M"),
+    region="zip code tabulation area:*",
+    regionin="state:17")
+View(census)
+```
+
+And that's it! You will have to use rename these variables to something more legible, but that's how you query Census data.
+
+```{r stepeight_next,echo=FALSE}
+census <-
+  getCensus(
+    name="acs/acs5/profile",
+    vintage="2019",
+    vars=c("DP03_0062E","DP03_0062M"),
+    region="zip code tabulation area:*",
+    regionin="state:17")
+census %>% tibble()
+```
+
+
+
